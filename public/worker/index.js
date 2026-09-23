@@ -18,7 +18,72 @@ import { lookupRegistration } from "./whois.js";
 /** @type {ExportedHandler<Env>} */
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+
+    // ==========================================
+    // 密码保护逻辑 (仅在设置了 ONE_IP_PASSWORD 时生效)
+    // ==========================================
     const password = env.ONE_IP_PASSWORD;
+    if (password) {
+      const cookie = request.headers.get("Cookie") || "";
+
+      // 1. 处理登录提交
+      if (request.method === "POST" && url.pathname === "/login") {
+        try {
+          const form = await request.formData();
+          const input = form.get("password");
+
+          if (input === password) {
+            return new Response(null, {
+              status: 302,
+              headers: {
+                "Location": "/",
+                "Set-Cookie": `oneip_auth=${password}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`
+              }
+            });
+          }
+        } catch (e) {
+          // 忽略表单解析错误
+        }
+        return new Response("密码错误", { status: 401, headers: { "content-type": "text/plain;charset=UTF-8" } });
+      }
+
+      // 2. 未登录拦截，返回密码输入框页面
+      if (!cookie.includes(`oneip_auth=${password}`)) {
+        return new Response(
+          `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>one-ip · 访问验证</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+  .box { background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); width: 100%; max-width: 320px; text-align: center; }
+  h2 { margin-bottom: 20px; font-size: 20px; }
+  input { width: 100%; padding: 10px 12px; margin-bottom: 15px; border: 1px solid #334155; border-radius: 6px; background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px; }
+  button { width: 100%; padding: 10px; background: #3b82f6; border: none; border-radius: 6px; color: white; font-size: 14px; font-weight: bold; cursor: pointer; }
+  button:hover { background: #2563eb; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>one-ip 私人工具</h2>
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="请输入访问密码" required autofocus />
+    <button type="submit">进入</button>
+  </form>
+</div>
+</body>
+</html>`,
+          {
+            headers: { "content-type": "text/html;charset=UTF-8" }
+          }
+        );
+      }
+    }
+    // ==========================================
+
     if (url.pathname === "/worker" || url.pathname.startsWith("/worker/"))
       return new Response("Not found", { status: 404 });
     if (!url.pathname.startsWith("/api/")) {
@@ -142,7 +207,6 @@ export default {
         return json({ error: error.message }, error.status);
       if (error instanceof URIError)
         return json({ error: "URL 编码无效" }, 400);
-      // Never log visitor IP, request URL, credentials, or upstream error bodies.
       console.error(
         JSON.stringify({ event: "api_error", type: error?.name ?? "Error" }),
       );
