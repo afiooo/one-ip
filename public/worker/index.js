@@ -18,7 +18,7 @@ import { lookupRegistration } from "./whois.js";
 /** @type {ExportedHandler<Env>} */
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
+    const password = env.ONE_IP_PASSWORD;
     if (url.pathname === "/worker" || url.pathname.startsWith("/worker/"))
       return new Response("Not found", { status: 404 });
     if (!url.pathname.startsWith("/api/")) {
